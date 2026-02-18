@@ -1,0 +1,37 @@
+---
+- name: Configuración del Firewall (UFW) para seguridad
+  hosts: wordpress_server
+  become: yes
+
+  tasks:
+    - name: Asegurar que UFW esté instalado
+      apt:
+        name: ufw
+        state: present
+
+    - name: Configurar política por defecto (Denegar entrada)
+      ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Permitir tráfico SSH (Crítico para no perder conexión)
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Permitir tráfico HTTP para WordPress
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+
+    - name: Habilitar el Firewall
+      ufw:
+        state: enabled
+
+    - name: Permitir tráfico HTTPS (Puerto 443)
+      ufw:
+        rule: allow
+        port: '443'
+        proto: tcp

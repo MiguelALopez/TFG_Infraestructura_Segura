@@ -1,0 +1,298 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - .gitignore
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: TFG-Variables
+  - name: terraformVersion
+    value: '1.6.0'
+  - name: azureServiceConnection
+    value: 'Azure-ServiceConnection-TFG'
+  - name: terraformWorkingDirectory
+    value: '$(System.DefaultWorkingDirectory)/terraform'
+  - name: ansibleWorkingDirectory
+    value: '$(System.DefaultWorkingDirectory)/ansible'
+
+stages:
+  # ========================================
+  # STAGE 1: VALIDACIÓN Y SEGURIDAD
+  # ========================================
+  - stage: Validation
+    displayName: 'Validación y Auditoría de Seguridad'
+    jobs:
+      - job: SecurityAudit
+        displayName: 'Auditoría de Seguridad'
+        steps:
+          - checkout: self
+            displayName: 'Checkout del repositorio'
+
+          - script: |
+              echo "🔍 Verificando que no haya archivos sensibles en el repositorio..."
+              SENSITIVE_FILES=$(git ls-files | grep -E "(\.tfvars|\.tfstate|hosts\.ini|\.env)$" || true)
+              if [ -n "$SENSITIVE_FILES" ]; then
+                echo "❌ ERROR: Archivos sensibles detectados en el repositorio:"
+                echo "$SENSITIVE_FILES"
+                exit 1
+              fi
+              echo "✅ No se encontraron archivos sensibles en Git"
+            displayName: 'Verificar .gitignore compliance'
+
+          - script: |
+              echo "🔍 Buscando contraseñas hardcodeadas..."
+              HARDCODED=$(grep -rn --include="*.tf" --include="*.yml" "password.*=.*['\"]" . || true)
+              if [ -n "$HARDCODED" ]; then
+                echo "⚠️ ADVERTENCIA: Posibles contraseñas hardcodeadas detectadas"
+                echo "$HARDCODED"
+              else
+                echo "✅ No se detectaron contraseñas hardcodeadas"
+              fi
+            displayName: 'Escaneo de credenciales hardcodeadas'
+            continueOnError: 'true'
+
+      - job: TerraformValidation
+        displayName: 'Validación de Terraform'
+        dependsOn: SecurityAudit
+        steps:
+          - script: |
+              cd $(terraformWorkingDirectory)
+              terraform fmt -check -recursive
+            displayName: 'Verificar formato de Terraform'
+            continueOnError: 'true'
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Init'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(terraformWorkingDirectory)
+              inlineScript: |
+                terraform init -backend=false
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Validate'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(terraformWorkingDirectory)
+              inlineScript: |
+                terraform validate
+
+      - job: AnsibleValidation
+        displayName: 'Validación de Ansible'
+        dependsOn: SecurityAudit
+        steps:
+          - script: |
+              sudo apt-get update
+              sudo apt-get install -y ansible
+            displayName: 'Instalar Ansible'
+
+          - script: |
+              cd $(ansibleWorkingDirectory)
+              ansible-playbook site.yml --syntax-check
+            displayName: 'Verificar sintaxis de Ansible'
+
+  # ========================================
+  # STAGE 2: TERRAFORM PLAN
+  # ========================================
+  - stage: TerraformPlan
+    displayName: 'Terraform Plan (Preview de Cambios)'
+    dependsOn: Validation
+    condition: succeeded()
+    jobs:
+      - job: Plan
+        displayName: 'Generar Plan de Terraform'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Terraform Init'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(terraformWorkingDirectory)
+              inlineScript: |
+                terraform init
+
+          - task: AzureCLI@2
+            displayName: 'Terraform Plan'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(terraformWorkingDirectory)
+              inlineScript: |
+                terraform plan \
+                  -var="admin_username=$(TF_VAR_admin_username)" \
+                  -var="ssh_public_key=$(TF_VAR_ssh_public_key)" \
+                  -var="location=$(TF_VAR_location)" \
+                  -var="vm_admin_password=$(TF_VAR_vm_admin_password)" \
+                  -var="db_password=$(TF_VAR_db_password)" \
+                  -out=tfplan
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publicar Plan de Terraform'
+            inputs:
+              targetPath: '$(terraformWorkingDirectory)/tfplan'
+              artifact: 'terraform-plan'
+              publishLocation: 'pipeline'
+
+  # ========================================
+  # STAGE 3: TERRAFORM APPLY (CON APROBACIÓN MANUAL)
+  # ========================================
+  - stage: TerraformApply
+    displayName: 'Terraform Apply (Despliegue de Infraestructura)'
+    dependsOn: TerraformPlan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: ApplyInfrastructure
+        displayName: 'Aplicar Cambios de Infraestructura'
+        environment: 'production-azure'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Descargar Plan de Terraform'
+                  inputs:
+                    artifactName: 'terraform-plan'
+                    targetPath: '$(terraformWorkingDirectory)'
+
+                - task: AzureCLI@2
+                  displayName: 'Terraform Init'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: $(terraformWorkingDirectory)
+                    inlineScript: |
+                      terraform init
+
+                - task: AzureCLI@2
+                  displayName: 'Terraform Apply'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: $(terraformWorkingDirectory)
+                    inlineScript: |
+                      terraform apply -auto-approve tfplan
+
+                - task: AzureCLI@2
+                  displayName: 'Capturar Outputs de Terraform'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: $(terraformWorkingDirectory)
+                    inlineScript: |
+                      echo "Extrayendo outputs de Terraform..."
+                      PUBLIC_IP=$(terraform output -raw public_ip_address)
+                      KEYVAULT_NAME=$(terraform output -raw key_vault_name)
+                      
+                      echo "##vso[task.setvariable variable=PUBLIC_IP;isOutput=true]$PUBLIC_IP"
+                      echo "##vso[task.setvariable variable=KEYVAULT_NAME;isOutput=true]$KEYVAULT_NAME"
+                      
+                      echo "✅ IP Pública: $PUBLIC_IP"
+                      echo "✅ Key Vault: $KEYVAULT_NAME"
+
+  # ========================================
+  # STAGE 4: CONFIGURACIÓN CON ANSIBLE
+  # ========================================
+  - stage: AnsibleDeploy
+    displayName: 'Configuración y Despliegue con Ansible'
+    dependsOn: TerraformApply
+    condition: succeeded()
+    jobs:
+      - job: ConfigureServers
+        displayName: 'Configurar Servidores con Ansible'
+        steps:
+          - script: |
+              sudo apt-get update
+              sudo apt-get install -y ansible python3-pip
+              pip3 install azure-cli azure-keyvault-secrets
+              ansible-galaxy collection install azure.azcollection
+            displayName: 'Instalar Ansible y dependencias de Azure'
+
+          - task: AzureCLI@2
+            displayName: 'Generar inventario dinámico'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(ansibleWorkingDirectory)
+              inlineScript: |
+                echo "Generando inventario desde Azure..."
+                cat > inventory/hosts.ini << EOF
+                [wordpress_servers]
+                vm-prod-1 ansible_host=$(VM_IP_1) ansible_user=$(ANSIBLE_USER) ansible_ssh_private_key_file=\${SSH_KEY_PATH}
+                vm-prod-2 ansible_host=$(VM_IP_2) ansible_user=$(ANSIBLE_USER) ansible_ssh_private_key_file=\${SSH_KEY_PATH}
+
+                [all:vars]
+                ansible_python_interpreter=/usr/bin/python3
+                EOF
+
+          - task: DownloadSecureFile@1
+            displayName: 'Descargar clave SSH privada'
+            name: sshKey
+            inputs:
+              secureFile: 'ansible_id_rsa'
+
+          - task: AzureCLI@2
+            displayName: 'Ejecutar Ansible Playbook'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: $(ansibleWorkingDirectory)
+              inlineScript: |
+                chmod 600 $(sshKey.secureFilePath)
+                
+                ansible-playbook \
+                  -i inventory/hosts.ini \
+                  site.yml \
+                  --private-key=$(sshKey.secureFilePath) \
+                  -e "azure_keyvault_uri=$(KEYVAULT_URI)" \
+                  -e "azure_keyvault_secret_name=wp-db-password"
+
+  # ========================================
+  # STAGE 5: VERIFICACIÓN POST-DESPLIEGUE
+  # ========================================
+  - stage: PostDeploymentTests
+    displayName: 'Verificación Post-Despliegue'
+    dependsOn: AnsibleDeploy
+    condition: succeeded()
+    jobs:
+      - job: HealthCheck
+        displayName: 'Health Check de la Aplicación'
+        steps:
+          - script: |
+              echo "🔍 Verificando accesibilidad del Load Balancer..."
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$(PUBLIC_IP) || echo "000")
+              
+              if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "301" ] || [ "$HTTP_STATUS" = "302" ]; then
+                echo "✅ Aplicación accesible (HTTP $HTTP_STATUS)"
+              else
+                echo "❌ ERROR: Aplicación no responde correctamente (HTTP $HTTP_STATUS)"
+                exit 1
+              fi
+            displayName: 'Verificar acceso HTTP'
+            continueOnError: 'true'
+
+          - script: |
+              echo "📊 Resumen del Despliegue:"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "🌐 IP Pública: $(PUBLIC_IP)"
+              echo "🔐 Key Vault: $(KEYVAULT_NAME)"
+              echo "🐳 Stack: WordPress + Nginx + Azure MySQL"
+              echo "✅ Pipeline completada exitosamente"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            displayName: 'Resumen del Despliegue'

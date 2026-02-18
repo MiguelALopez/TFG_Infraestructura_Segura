@@ -1,0 +1,20 @@
+---
+# Variables para servidores WordPress
+# Configuración de Azure Database for MySQL
+
+# Configuración de la base de datos
+db_host: "tfg-mysql-micky.mysql.database.azure.com"
+db_user: "micky_admin"
+db_name: "wordpress_db"
+db_port: "3306"
+
+# Azure Key Vault
+azure_keyvault_uri: "https://tfg-vault-micky-8e8479c5.vault.azure.net/"
+azure_keyvault_secret_name: "wp-db-password"
+
+# Directorio de despliegue
+deploy_directory: "/home/{{ ansible_user }}/wordpress_deploy"
+
+# Configuración SSL para MySQL
+db_ssl_enabled: true
+db_ssl_ca_cert: "/etc/ssl/certs/azure-db-ssl.crt.pem"

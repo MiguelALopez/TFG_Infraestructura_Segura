@@ -1,0 +1,65 @@
+# ==========================================
+# --- TERRAFORM (Infraestructura como Código) ---
+# ==========================================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfstate.lock.info
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+*.tfplan
+
+# Archivos de override locales
+*override.tf
+*override.tf.json
+
+# ==========================================
+# --- ANSIBLE & DEPLOY (Automatización) ---
+# ==========================================
+*.retry
+*.log
+ansible/deploy/certs/*
+ansible/deploy/wp-config.php
+ansible/ansible.cfg
+**/inventory*.ini
+**/hosts.ini
+
+
+.vault_pass
+
+# ==========================================
+# --- DOCKER & DB ---
+# ==========================================
+.env
+*.sql
+config/
+credenciales.json
+
+# ==========================================
+# --- SEGURIDAD GENERAL (Llaves y Certs) ---
+# ==========================================
+*.key
+*.pem
+*.id_rsa
+*.ppk
+*.pub
+*.crt
+*.csr
+
+# ==========================================
+# --- SISTEMA Y EDITORES (Limpieza) ---
+# ==========================================
+.DS_Store
+__pycache__/
+venv/
+.vscode/
+.idea/
+*.bak
+*.tmp
+*.swp
+=*
+
+# Archivos internos de documentación
+SUMARIO_CAMBIOS_GEMINI.md

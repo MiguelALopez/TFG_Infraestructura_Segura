@@ -1,0 +1,120 @@
+---
+- name: Configuración del Servidor y Despliegue de WordPress
+  hosts: wordpress_servers
+  become: true
+
+  tasks:
+    - name: Recuperar secretos desde Azure Key Vault
+      delegate_to: localhost
+      run_once: true
+      become: false
+      azure.azcollection.azure_rm_keyvaultsecret_info:
+        vault_uri: "{{ azure_keyvault_uri }}"
+        name: "{{ azure_keyvault_secret_name }}"
+      register: kv_secrets
+
+    - name: Establecer la contraseña como fact
+      ansible.builtin.set_fact:
+        db_password_vault: "{{ kv_secrets.secrets[0].secret }}"
+
+    - name: Esperar a que el servidor responda por SSH
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+
+    - name: Limpieza total de residuos de Docker/Containerd
+      ansible.builtin.apt:
+        name:
+          - docker
+          - docker-engine
+          - docker.io
+          - containerd
+          - runc
+          - containerd.io
+        state: absent
+        purge: true
+
+    - name: Eliminar directorios y sockets residuales
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/docker
+        - /var/lib/docker
+        - /var/run/docker.sock
+        - /var/run/docker.pid
+
+    - name: Actualizar e instalar dependencias y Docker
+      ansible.builtin.apt:
+        name:
+          - iptables
+          - ca-certificates
+          - docker.io
+          - docker-compose
+        state: present
+        update_cache: true
+
+    - name: Resetear fallos y asegurar que el socket esté activo
+      ansible.builtin.systemd:
+        name: docker.socket
+        state: restarted
+        enabled: true
+
+    - name: Iniciar el servicio de Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Esperar a que el socket de Docker responda
+      ansible.builtin.wait_for:
+        path: /var/run/docker.sock
+        state: present
+        timeout: 30
+
+    - name: Crear directorio de despliegue
+      ansible.builtin.file:
+        path: "{{ deploy_directory }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copiar archivos de despliegue
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/deploy/"
+        dest: "{{ deploy_directory }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+
+    - name: Generar archivo .env con el secreto del Key Vault
+      ansible.builtin.copy:
+        dest: "{{ deploy_directory }}/.env"
+        content: |
+          WORDPRESS_DB_HOST={{ db_host }}
+          WORDPRESS_DB_USER={{ db_user }}
+          WORDPRESS_DB_PASSWORD={{ db_password_vault }}
+          WORDPRESS_DB_NAME={{ db_name }}
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+
+    - name: Verificar conectividad con Azure MySQL
+      ansible.builtin.wait_for:
+        host: "{{ db_host }}"
+        port: "{{ db_port }}"
+        timeout: 10
+      ignore_errors: true
+      register: db_connectivity
+
+    - name: Mostrar advertencia si no hay conectividad con la DB
+      ansible.builtin.debug:
+        msg: "ADVERTENCIA: No se pudo conectar a {{ db_host }}:{{ db_port }}. Verifica el firewall de Azure."
+      when: db_connectivity.failed
+
+    - name: Lanzar el stack con Docker Compose
+      ansible.builtin.shell: docker-compose up -d
+      args:
+        chdir: "{{ deploy_directory }}/"

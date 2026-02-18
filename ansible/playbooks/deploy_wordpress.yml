@@ -1,0 +1,52 @@
+---
+- name: Despliegue de WordPress con Docker Compose y Nginx Proxy
+  hosts: wordpress_servers
+  become: yes
+
+  tasks:
+    - name: 1. Crear estructura de directorios en el servidor
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: '0755'
+      with_items:
+        - "/home/ansible/wordpress"
+        - "/home/ansible/wordpress/nginx"
+        - "/home/ansible/wordpress/certs"
+
+    - name: 2. Copiar archivos de configuración (Docker, Nginx, WP)
+      copy:
+        src: "../deploy/{{ item }}"
+        dest: "/home/ansible/wordpress/{{ item }}"
+        owner: ansible
+        group: ansible
+        mode: '0644'
+      with_items:
+        - "docker-compose.yml"
+        - "nginx/default.conf"
+        - "wp-config.php"
+        - "certs/server.crt"
+
+    - name: 3. Copiar clave privada SSL con permisos restrictivos
+      copy:
+        src: "../deploy/certs/server.key"
+        dest: "/home/ansible/wordpress/certs/server.key"
+        owner: ansible
+        group: ansible
+        mode: '0600'
+
+    - name: 4. Levantar los contenedores de Docker
+      shell:
+        cmd: docker compose up -d --remove-orphans
+        chdir: /home/ansible/wordpress
+
+    - name: 5. Inyectar wp-config.php dentro del contenedor
+      shell:
+        cmd: docker cp /home/ansible/wordpress/wp-config.php wordpress-wordpress-1:/var/www/html/wp-config.php
+
+    - name: 6. Reiniciar Nginx para validar certificados y Salud
+      shell:
+        cmd: docker compose restart nginx
+        chdir: /home/ansible/wordpress

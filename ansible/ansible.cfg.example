@@ -1,0 +1,6 @@
+[defaults]
+inventory = /path/to/TFG_Infraestructura_Segura/ansible/inventory/hosts.ini
+remote_user = ansible
+private_key_file = /path/to/.ssh/ansible_id_rsa
+host_key_checking = False
+ask_pass = False
