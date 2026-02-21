@@ -377,8 +377,8 @@ Proyecto desarrollado como **Trabajo de Fin de Grado (TFG)**, enfocado en **clou
            │ WordPress    │          │ WordPress    │
            │ Docker       │          │ Docker       │
            └──────┬───────┘          └──────┬───────┘
-                  │                          │
-                  └─────────┬────────────────┘
+                  │                         │
+                  └─────────┬───────────────┘
                             ▼
                     Azure MySQL PaaS
                   (Flexible Server HA)

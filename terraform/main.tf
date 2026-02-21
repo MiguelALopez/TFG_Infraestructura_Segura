@@ -1,4 +1,4 @@
-# 1. Grupo de Recursos (usa el existente en lugar de crearlo)
+# 1. Grupo de Recursos
 data "azurerm_resource_group" "rg" {
   name = "rg-tfg-micky-wordpress"
 }
