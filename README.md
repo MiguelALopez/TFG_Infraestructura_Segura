@@ -406,7 +406,7 @@ Proyecto desarrollado como **Trabajo de Fin de Grado (TFG)**, enfocado en **clou
 
 **Miguel Ángel Torres López**  
 📧 miguelangel.s463406@cesurformacion.com  
-🎓 Desarrollo de Aplicaciones Multiplataforma (DAM)  
+🎓 Administración de Sistemas Informáticos en Red (ASIR)
 🏫 CESUR Formación
 
 ---
@@ -418,3 +418,4 @@ Este proyecto es de uso educativo para el Trabajo de Fin de Grado (TFG).
 ---
 
 **🚀 ¡Infraestructura lista para producción con un click!**
+
