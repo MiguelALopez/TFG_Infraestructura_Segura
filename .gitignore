@@ -50,6 +50,14 @@ credenciales.json
 *.csr
 
 # ==========================================
+# --- ARCHIVOS TEMPORALES Y NOTAS ---
+# ==========================================
+nuevo*.txt
+*.tmp
+notes*.txt
+session*.txt
+
+# ==========================================
 # --- SISTEMA Y EDITORES (Limpieza) ---
 # ==========================================
 .DS_Store

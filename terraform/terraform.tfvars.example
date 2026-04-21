@@ -1,0 +1,24 @@
+# ==========================================
+# Terraform Variables - Ejemplo de configuración
+# ==========================================
+#
+# Copia este archivo a terraform.tfvars y actualiza los valores:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# ⚠️ NUNCA subas terraform.tfvars al repositorio (está en .gitignore)
+#
+
+# Región de Azure
+location = "France Central"
+
+# Usuario administrador de las VMs
+admin_username = "azureuser"
+
+# Clave pública SSH para acceso a las VMs
+# Genera con: ssh-keygen -t rsa -b 4096 -f ~/.ssh/ansible_id_rsa
+# Luego copia el contenido de: cat ~/.ssh/ansible_id_rsa.pub
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAA...TU_CLAVE_PUBLICA_AQUI user@host"
+
+# Credenciales MySQL - se guardarán automáticamente en Azure Key Vault
+db_admin_user = "micky_admin"
+db_password   = "TuPasswordMySQL_Super_Seguro_456!"

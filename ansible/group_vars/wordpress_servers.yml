@@ -1,0 +1,16 @@
+---
+# Variables para el grupo wordpress_servers
+# Configuración de Azure Database for MySQL
+
+# Conexión a la base de datos
+db_host: "tfg-mysql-micky.mysql.database.azure.com"
+db_user: "micky_admin"
+db_name: "wordpress_db"
+db_port: "3306"
+
+# Azure Key Vault - la contraseña se obtiene en tiempo de ejecución
+azure_keyvault_uri: "https://tfg-vault-micky-8e8479c5.vault.azure.net/"
+azure_keyvault_secret_name: "wp-db-password"
+
+# Directorio de despliegue en las VMs
+deploy_directory: "/home/{{ ansible_user }}/wordpress_deploy"
